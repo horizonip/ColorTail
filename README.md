@@ -4,6 +4,8 @@ A Windows GUI tail viewer that monitors a file in real-time with color-coded out
 
 ![Windows](https://img.shields.io/badge/platform-Windows-blue)
 
+![ColorTail screenshot](screenshot.png)
+
 ## Features
 
 - Real-time file monitoring (1-second polling)

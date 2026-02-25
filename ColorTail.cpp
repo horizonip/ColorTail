@@ -363,6 +363,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdSh
     int argc;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
 
+    if (argc >= 2 && (wcscmp(argv[1], L"/?") == 0 || wcscmp(argv[1], L"--help") == 0 || wcscmp(argv[1], L"-h") == 0)) {
+        MessageBoxW(nullptr,
+                    L"Usage: ColorTail.exe [filepath] [lines]\n\n"
+                    L"  filepath   Path to the file to monitor\n"
+                    L"  lines      Number of tail lines (default 50)\n\n"
+                    L"If no filepath is given, a file open dialog is shown.",
+                    L"ColorTail", MB_ICONINFORMATION);
+        LocalFree(argv);
+        return 0;
+    }
+
     if (argc < 2) {
         // No file argument — show an Open File dialog
         wchar_t fileBuf[MAX_PATH] = {};

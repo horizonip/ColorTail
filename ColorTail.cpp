@@ -16,6 +16,9 @@
 #include <ctime>
 #include <cstdio>
 
+// ── Version ─────────────────────────────────────────────────────────────────
+static constexpr const wchar_t* APP_VERSION = L"1.0.0";
+
 // ── Constants ───────────────────────────────────────────────────────────────
 static constexpr int  TIMER_ID        = 1;
 static constexpr int  TIMER_INTERVAL  = 1000;   // 1 second
@@ -364,12 +367,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdSh
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
 
     if (argc >= 2 && (wcscmp(argv[1], L"/?") == 0 || wcscmp(argv[1], L"--help") == 0 || wcscmp(argv[1], L"-h") == 0)) {
-        MessageBoxW(nullptr,
+        std::wstring helpMsg = std::wstring(L"ColorTail v") + APP_VERSION + L"\n\n"
                     L"Usage: ColorTail.exe [filepath] [lines]\n\n"
                     L"  filepath   Path to the file to monitor\n"
                     L"  lines      Number of tail lines (default 50)\n\n"
-                    L"If no filepath is given, a file open dialog is shown.",
-                    L"ColorTail", MB_ICONINFORMATION);
+                    L"If no filepath is given, a file open dialog is shown.";
+        MessageBoxW(nullptr, helpMsg.c_str(), L"ColorTail", MB_ICONINFORMATION);
         LocalFree(argv);
         return 0;
     }

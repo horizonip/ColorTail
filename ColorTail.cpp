@@ -737,6 +737,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdSh
             FindNext(g_hRichEdit);
             continue;
         }
+        // Escape: Close application
+        if (msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE) {
+            DestroyWindow(hWnd);
+            continue;
+        }
         // Ctrl+O / Ctrl+W: Open new file (Ctrl+W closes current first)
         if (msg.message == WM_KEYDOWN && (msg.wParam == 'O' || msg.wParam == 'W') && (GetKeyState(VK_CONTROL) & 0x8000)) {
             if (msg.wParam == 'W') {

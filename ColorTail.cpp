@@ -52,6 +52,116 @@ static HMODULE       g_hRichEditLib = nullptr;
 static bool          g_paused       = false;
 static int           g_lastLineCount = 0;
 
+// ── Go To Line dialog ───────────────────────────────────────────────────────
+static constexpr int IDC_GOTO_EDIT = 200;
+
+static INT_PTR CALLBACK GoToLineDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM)
+{
+    switch (msg) {
+    case WM_INITDIALOG:
+        SetFocus(GetDlgItem(hDlg, IDC_GOTO_EDIT));
+        return FALSE;
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDOK) {
+            wchar_t buf[16] = {};
+            GetDlgItemTextW(hDlg, IDC_GOTO_EDIT, buf, _countof(buf));
+            int line = _wtoi(buf);
+            EndDialog(hDlg, line);
+            return TRUE;
+        }
+        if (LOWORD(wParam) == IDCANCEL) {
+            EndDialog(hDlg, -1);
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
+}
+
+static void GoToLine(HWND hParent)
+{
+    // Build dialog template in memory
+    #pragma pack(push, 4)
+    struct {
+        DLGTEMPLATE dlg;
+        WORD menu, cls, title;
+        // controls follow via padding
+    } tmplBuf = {};
+    #pragma pack(pop)
+
+    // We'll use DialogBoxIndirectParam with a larger buffer
+    alignas(4) BYTE buf[512] = {};
+    auto* dlg = reinterpret_cast<DLGTEMPLATE*>(buf);
+    dlg->style = DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU;
+    dlg->cdit = 3; // 3 controls: label, edit, OK button
+    dlg->cx = 150;
+    dlg->cy = 50;
+
+    BYTE* p = buf + sizeof(DLGTEMPLATE);
+    // menu, class, title (all empty)
+    *reinterpret_cast<WORD*>(p) = 0; p += 2; // menu
+    *reinterpret_cast<WORD*>(p) = 0; p += 2; // class
+    // title: "Go To Line"
+    const wchar_t* title = L"Go To Line";
+    size_t titleLen = (wcslen(title) + 1) * sizeof(wchar_t);
+    memcpy(p, title, titleLen); p += titleLen;
+
+    // Align to DWORD
+    p = reinterpret_cast<BYTE*>((reinterpret_cast<ULONG_PTR>(p) + 3) & ~3);
+
+    // Control 1: Static label
+    auto* ctrl = reinterpret_cast<DLGITEMTEMPLATE*>(p);
+    ctrl->style = WS_CHILD | WS_VISIBLE | SS_LEFT;
+    ctrl->x = 7; ctrl->y = 7; ctrl->cx = 50; ctrl->cy = 10;
+    ctrl->id = 0xFFFF;
+    p += sizeof(DLGITEMTEMPLATE);
+    *reinterpret_cast<WORD*>(p) = 0xFFFF; p += 2;
+    *reinterpret_cast<WORD*>(p) = 0x0082; p += 2; // static class
+    const wchar_t* label = L"Line:";
+    size_t labelLen = (wcslen(label) + 1) * sizeof(wchar_t);
+    memcpy(p, label, labelLen); p += labelLen;
+    *reinterpret_cast<WORD*>(p) = 0; p += 2; // creation data
+
+    p = reinterpret_cast<BYTE*>((reinterpret_cast<ULONG_PTR>(p) + 3) & ~3);
+
+    // Control 2: Edit box
+    ctrl = reinterpret_cast<DLGITEMTEMPLATE*>(p);
+    ctrl->style = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_NUMBER;
+    ctrl->x = 60; ctrl->y = 5; ctrl->cx = 80; ctrl->cy = 14;
+    ctrl->id = IDC_GOTO_EDIT;
+    p += sizeof(DLGITEMTEMPLATE);
+    *reinterpret_cast<WORD*>(p) = 0xFFFF; p += 2;
+    *reinterpret_cast<WORD*>(p) = 0x0081; p += 2; // edit class
+    *reinterpret_cast<WORD*>(p) = 0; p += 2; // no text
+    *reinterpret_cast<WORD*>(p) = 0; p += 2; // creation data
+
+    p = reinterpret_cast<BYTE*>((reinterpret_cast<ULONG_PTR>(p) + 3) & ~3);
+
+    // Control 3: OK button (default)
+    ctrl = reinterpret_cast<DLGITEMTEMPLATE*>(p);
+    ctrl->style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON;
+    ctrl->x = 50; ctrl->y = 28; ctrl->cx = 50; ctrl->cy = 14;
+    ctrl->id = IDOK;
+    p += sizeof(DLGITEMTEMPLATE);
+    *reinterpret_cast<WORD*>(p) = 0xFFFF; p += 2;
+    *reinterpret_cast<WORD*>(p) = 0x0080; p += 2; // button class
+    const wchar_t* okText = L"OK";
+    size_t okLen = (wcslen(okText) + 1) * sizeof(wchar_t);
+    memcpy(p, okText, okLen); p += okLen;
+    *reinterpret_cast<WORD*>(p) = 0; p += 2; // creation data
+
+    INT_PTR result = DialogBoxIndirectW(GetModuleHandleW(nullptr), dlg, hParent, GoToLineDlgProc);
+    if (result > 0) {
+        int line = static_cast<int>(result) - 1; // 0-based
+        int totalLines = static_cast<int>(SendMessageW(g_hRichEdit, EM_GETLINECOUNT, 0, 0));
+        if (line < 0) line = 0;
+        if (line >= totalLines) line = totalLines - 1;
+        int charIdx = static_cast<int>(SendMessageW(g_hRichEdit, EM_LINEINDEX, line, 0));
+        SendMessageW(g_hRichEdit, EM_SETSEL, charIdx, charIdx);
+        SendMessageW(g_hRichEdit, EM_SCROLLCARET, 0, 0);
+    }
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 // Read the last N lines of a text file. Returns the lines and total byte size.
@@ -454,6 +564,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdSh
         if (msg.message == WM_KEYDOWN && msg.wParam == VK_SPACE) {
             g_paused = !g_paused;
             UpdateStatusBar(g_lastLineCount, g_lastSize);
+            continue;
+        }
+        // Ctrl+G: Go To Line
+        if (msg.message == WM_KEYDOWN && msg.wParam == 'G' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            GoToLine(hWnd);
             continue;
         }
         TranslateMessage(&msg);

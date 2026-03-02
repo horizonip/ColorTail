@@ -701,6 +701,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdSh
             FindNext(g_hRichEdit);
             continue;
         }
+        // Ctrl+End: Jump to bottom
+        if (msg.message == WM_KEYDOWN && msg.wParam == VK_END && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            ScrollToBottom(g_hRichEdit);
+            continue;
+        }
         // Ctrl+G: Go To Line
         if (msg.message == WM_KEYDOWN && msg.wParam == 'G' && (GetKeyState(VK_CONTROL) & 0x8000)) {
             GoToLine(hWnd);

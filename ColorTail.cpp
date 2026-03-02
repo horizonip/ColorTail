@@ -49,6 +49,8 @@ static LARGE_INTEGER g_lastSize     = {};
 static HWND          g_hRichEdit    = nullptr;
 static HWND          g_hStatusBar   = nullptr;
 static HMODULE       g_hRichEditLib = nullptr;
+static bool          g_paused       = false;
+static int           g_lastLineCount = 0;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -185,8 +187,8 @@ static void UpdateStatusBar(int lineCount, LARGE_INTEGER fileSize)
     double sizeKB = fileSize.QuadPart / 1024.0;
 
     wchar_t status[256];
-    swprintf_s(status, L"Last updated: %s | Size: %.2f KB | Lines shown: %d",
-               timeBuf, sizeKB, lineCount);
+    swprintf_s(status, L"%sLast updated: %s | Size: %.2f KB | Lines shown: %d",
+               g_paused ? L"PAUSED | " : L"", timeBuf, sizeKB, lineCount);
 
     SetWindowTextW(g_hStatusBar, status);
 }
@@ -279,7 +281,8 @@ static void UpdateContent()
     }
 
     g_lastSize = fileSize;
-    UpdateStatusBar(static_cast<int>(lines.size()), fileSize);
+    g_lastLineCount = static_cast<int>(lines.size());
+    UpdateStatusBar(g_lastLineCount, fileSize);
 }
 
 // ── Window procedure ────────────────────────────────────────────────────────
@@ -347,7 +350,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     }
 
     case WM_TIMER:
-        if (wParam == TIMER_ID)
+        if (wParam == TIMER_ID && !g_paused)
             UpdateContent();
         return 0;
 
@@ -447,6 +450,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdSh
     // Message loop
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0)) {
+        // Space toggles pause/resume
+        if (msg.message == WM_KEYDOWN && msg.wParam == VK_SPACE) {
+            g_paused = !g_paused;
+            UpdateStatusBar(g_lastLineCount, g_lastSize);
+            continue;
+        }
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }

@@ -429,7 +429,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdSh
     RegisterClassExW(&wc);
 
     // Build window title
-    std::wstring title = L"Tail Viewer - " + g_filePath;
+    std::wstring title = std::wstring(L"ColorTail v") + APP_VERSION + L" - " + g_filePath;
 
     // Create main window (800×600 client area)
     RECT rc = { 0, 0, 800, 600 };

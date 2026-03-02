@@ -6,6 +6,7 @@
 #endif
 
 #include <windows.h>
+#include <windowsx.h>
 #include <commdlg.h>
 #include <richedit.h>
 #include <string>
@@ -26,6 +27,19 @@ static constexpr int  DEFAULT_LINES   = 50;
 static constexpr int  IDC_RICHEDIT    = 100;
 static constexpr int  IDC_STATUSBAR   = 101;
 static constexpr int  STATUS_HEIGHT   = 22;
+
+// Context menu item IDs
+static constexpr int  IDM_OPEN        = 1001;
+static constexpr int  IDM_CLOSE       = 1002;
+static constexpr int  IDM_PAUSE       = 1003;
+static constexpr int  IDM_FIND        = 1004;
+static constexpr int  IDM_FINDNEXT    = 1005;
+static constexpr int  IDM_GOTOLINE    = 1006;
+static constexpr int  IDM_COPY        = 1007;
+static constexpr int  IDM_SELECTALL   = 1008;
+static constexpr int  IDM_TOP         = 1009;
+static constexpr int  IDM_BOTTOM      = 1010;
+static constexpr int  IDM_EXIT        = 1011;
 
 // 8-colour cycle matching the PowerShell version
 static const COLORREF g_colors[] = {
@@ -623,6 +637,63 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
         if (wParam == TIMER_ID && !g_paused)
             UpdateContent();
         return 0;
+
+    case WM_CONTEXTMENU: {
+        HMENU hMenu = CreatePopupMenu();
+        AppendMenuW(hMenu, MF_STRING, IDM_OPEN,      L"Open File\tCtrl+O");
+        AppendMenuW(hMenu, MF_STRING, IDM_CLOSE,     L"Close File\tCtrl+W");
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(hMenu, MF_STRING | (g_paused ? MF_CHECKED : 0), IDM_PAUSE, L"Pause\tSpace");
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(hMenu, MF_STRING, IDM_COPY,      L"Copy\tCtrl+C");
+        AppendMenuW(hMenu, MF_STRING, IDM_SELECTALL,  L"Select All\tCtrl+A");
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(hMenu, MF_STRING, IDM_FIND,      L"Find\tCtrl+F");
+        AppendMenuW(hMenu, MF_STRING, IDM_FINDNEXT,  L"Find Next\tF3");
+        AppendMenuW(hMenu, MF_STRING, IDM_GOTOLINE,  L"Go to Line\tCtrl+G");
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(hMenu, MF_STRING, IDM_TOP,       L"Jump to Top\tCtrl+Home");
+        AppendMenuW(hMenu, MF_STRING, IDM_BOTTOM,    L"Jump to Bottom\tCtrl+End");
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(hMenu, MF_STRING, IDM_EXIT,      L"Exit\tEsc");
+        TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), 0, hWnd, nullptr);
+        DestroyMenu(hMenu);
+        return 0;
+    }
+
+    case WM_COMMAND:
+        switch (LOWORD(wParam)) {
+        case IDM_OPEN:      OpenNewFile(); return 0;
+        case IDM_CLOSE:
+            g_filePath.clear(); g_lastContent.clear(); g_lastSize = {};
+            g_paused = true;
+            SetWindowTextW(g_hRichEdit, L"");
+            SetWindowTextW(g_hMainWnd, (std::wstring(L"ColorTail v") + APP_VERSION).c_str());
+            SetWindowTextW(g_hStatusBar, L"No file open");
+            OpenNewFile();
+            if (!g_filePath.empty()) g_paused = false;
+            return 0;
+        case IDM_PAUSE:
+            g_paused = !g_paused;
+            UpdateStatusBar(g_lastLineCount, g_lastSize);
+            return 0;
+        case IDM_COPY:
+            SendMessageW(g_hRichEdit, WM_COPY, 0, 0);
+            return 0;
+        case IDM_SELECTALL:
+            SendMessageW(g_hRichEdit, EM_SETSEL, 0, -1);
+            return 0;
+        case IDM_FIND:      ShowFindDialog(hWnd); return 0;
+        case IDM_FINDNEXT:  FindNext(g_hRichEdit); return 0;
+        case IDM_GOTOLINE:  GoToLine(hWnd); return 0;
+        case IDM_TOP:
+            SendMessageW(g_hRichEdit, EM_SETSEL, 0, 0);
+            SendMessageW(g_hRichEdit, EM_SCROLLCARET, 0, 0);
+            return 0;
+        case IDM_BOTTOM:    ScrollToBottom(g_hRichEdit); return 0;
+        case IDM_EXIT:      DestroyWindow(hWnd); return 0;
+        }
+        break;
 
     case WM_DESTROY:
         KillTimer(hWnd, TIMER_ID);

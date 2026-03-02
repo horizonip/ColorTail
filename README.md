@@ -15,6 +15,7 @@ A Windows GUI tail viewer that monitors a file in real-time with color-coded out
 - Reads up to 16 MB tail for large files
 - UTF-8 and ANSI encoding support
 - File open dialog when launched without arguments
+- Right-click context menu with all actions
 
 ## Usage
 

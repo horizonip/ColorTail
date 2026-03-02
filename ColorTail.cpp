@@ -701,6 +701,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdSh
             FindNext(g_hRichEdit);
             continue;
         }
+        // Ctrl+Home: Jump to top
+        if (msg.message == WM_KEYDOWN && msg.wParam == VK_HOME && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            SendMessageW(g_hRichEdit, EM_SETSEL, 0, 0);
+            SendMessageW(g_hRichEdit, EM_SCROLLCARET, 0, 0);
+            continue;
+        }
         // Ctrl+End: Jump to bottom
         if (msg.message == WM_KEYDOWN && msg.wParam == VK_END && (GetKeyState(VK_CONTROL) & 0x8000)) {
             ScrollToBottom(g_hRichEdit);

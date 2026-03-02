@@ -33,6 +33,7 @@ Double-click `ColorTail.exe` or run it with no arguments to open a file picker.
 
 | Key | Action |
 |-----|--------|
+| `Ctrl+O` | Open a new file |
 | `Space` | Pause/resume file monitoring |
 | `Ctrl+F` | Find text |
 | `F3` | Find next occurrence |

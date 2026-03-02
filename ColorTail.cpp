@@ -48,9 +48,44 @@ static std::wstring  g_lastContent;
 static LARGE_INTEGER g_lastSize     = {};
 static HWND          g_hRichEdit    = nullptr;
 static HWND          g_hStatusBar   = nullptr;
+static HWND          g_hMainWnd     = nullptr;
 static HMODULE       g_hRichEditLib = nullptr;
 static bool          g_paused       = false;
 static int           g_lastLineCount = 0;
+
+// Forward declarations
+static void UpdateContent();
+static void ScrollToBottom(HWND hRich);
+
+// ── Open file ───────────────────────────────────────────────────────────────
+static void OpenNewFile()
+{
+    wchar_t fileBuf[MAX_PATH] = {};
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner   = g_hMainWnd;
+    ofn.lpstrFilter = L"All Files\0*.*\0Text Files\0*.txt;*.log\0";
+    ofn.lpstrFile   = fileBuf;
+    ofn.nMaxFile    = MAX_PATH;
+    ofn.lpstrTitle  = L"ColorTail - Select File to Monitor";
+    ofn.Flags       = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    if (!GetOpenFileNameW(&ofn))
+        return;
+
+    g_filePath = fileBuf;
+    g_lastContent.clear();
+    g_lastSize = {};
+    g_colorIndex = 0;
+
+    // Update title bar
+    std::wstring title = std::wstring(L"ColorTail v") + APP_VERSION + L" - " + g_filePath;
+    SetWindowTextW(g_hMainWnd, title.c_str());
+
+    // Clear and reload
+    SetWindowTextW(g_hRichEdit, L"");
+    UpdateContent();
+    ScrollToBottom(g_hRichEdit);
+}
 
 // ── Find dialog ─────────────────────────────────────────────────────────────
 static constexpr int IDC_FIND_EDIT = 201;
@@ -679,6 +714,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdSh
         rc.right - rc.left, rc.bottom - rc.top,
         nullptr, nullptr, hInstance, nullptr);
 
+    g_hMainWnd = hWnd;
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
 
@@ -699,6 +735,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdSh
         // F3: Find Next
         if (msg.message == WM_KEYDOWN && msg.wParam == VK_F3) {
             FindNext(g_hRichEdit);
+            continue;
+        }
+        // Ctrl+O: Open new file
+        if (msg.message == WM_KEYDOWN && msg.wParam == 'O' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            OpenNewFile();
             continue;
         }
         // Ctrl+Home: Jump to top

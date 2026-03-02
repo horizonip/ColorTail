@@ -737,9 +737,22 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdSh
             FindNext(g_hRichEdit);
             continue;
         }
-        // Ctrl+O: Open new file
-        if (msg.message == WM_KEYDOWN && msg.wParam == 'O' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+        // Ctrl+O / Ctrl+W: Open new file (Ctrl+W closes current first)
+        if (msg.message == WM_KEYDOWN && (msg.wParam == 'O' || msg.wParam == 'W') && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            if (msg.wParam == 'W') {
+                // Close current file — clear display and stop updates
+                g_filePath.clear();
+                g_lastContent.clear();
+                g_lastSize = {};
+                g_paused = true;
+                SetWindowTextW(g_hRichEdit, L"");
+                std::wstring title = std::wstring(L"ColorTail v") + APP_VERSION;
+                SetWindowTextW(g_hMainWnd, title.c_str());
+                SetWindowTextW(g_hStatusBar, L"No file open");
+            }
             OpenNewFile();
+            if (!g_filePath.empty())
+                g_paused = false;
             continue;
         }
         // Ctrl+Home: Jump to top

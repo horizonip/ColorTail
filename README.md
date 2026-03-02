@@ -29,6 +29,12 @@ ColorTail.exe <filepath> [lines]
 
 Double-click `ColorTail.exe` or run it with no arguments to open a file picker.
 
+## Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Space` | Pause/resume file monitoring |
+
 ## Build
 
 Requires CMake 3.15+ and a C++17 compiler (MinGW/GCC recommended).

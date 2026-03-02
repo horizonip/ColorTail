@@ -52,6 +52,131 @@ static HMODULE       g_hRichEditLib = nullptr;
 static bool          g_paused       = false;
 static int           g_lastLineCount = 0;
 
+// ── Find dialog ─────────────────────────────────────────────────────────────
+static constexpr int IDC_FIND_EDIT = 201;
+static std::wstring  g_findText;
+
+static INT_PTR CALLBACK FindDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM)
+{
+    switch (msg) {
+    case WM_INITDIALOG:
+        SetDlgItemTextW(hDlg, IDC_FIND_EDIT, g_findText.c_str());
+        SendDlgItemMessageW(hDlg, IDC_FIND_EDIT, EM_SETSEL, 0, -1);
+        SetFocus(GetDlgItem(hDlg, IDC_FIND_EDIT));
+        return FALSE;
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDOK) {
+            wchar_t buf[256] = {};
+            GetDlgItemTextW(hDlg, IDC_FIND_EDIT, buf, _countof(buf));
+            g_findText = buf;
+            EndDialog(hDlg, 1);
+            return TRUE;
+        }
+        if (LOWORD(wParam) == IDCANCEL) {
+            EndDialog(hDlg, 0);
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
+}
+
+static void FindNext(HWND hRich)
+{
+    if (g_findText.empty()) return;
+
+    // Get current selection end as search start
+    CHARRANGE cr = {};
+    SendMessageW(hRich, EM_EXGETSEL, 0, reinterpret_cast<LPARAM>(&cr));
+
+    int textLen = GetWindowTextLengthW(hRich);
+
+    FINDTEXTEXW ft = {};
+    ft.chrg.cpMin = cr.cpMax;
+    ft.chrg.cpMax = textLen;
+    ft.lpstrText = g_findText.c_str();
+
+    LRESULT pos = SendMessageW(hRich, EM_FINDTEXTEXW, FR_DOWN, reinterpret_cast<LPARAM>(&ft));
+
+    // Wrap around if not found
+    if (pos == -1 && ft.chrg.cpMin > 0) {
+        ft.chrg.cpMin = 0;
+        ft.chrg.cpMax = cr.cpMax;
+        pos = SendMessageW(hRich, EM_FINDTEXTEXW, FR_DOWN, reinterpret_cast<LPARAM>(&ft));
+    }
+
+    if (pos != -1) {
+        SendMessageW(hRich, EM_EXSETSEL, 0, reinterpret_cast<LPARAM>(&ft.chrgText));
+        SendMessageW(hRich, EM_SCROLLCARET, 0, 0);
+    } else {
+        MessageBoxW(GetParent(hRich), L"Text not found.", L"Find", MB_ICONINFORMATION);
+    }
+}
+
+static void ShowFindDialog(HWND hParent)
+{
+    alignas(4) BYTE buf[512] = {};
+    auto* dlg = reinterpret_cast<DLGTEMPLATE*>(buf);
+    dlg->style = DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU;
+    dlg->cdit = 3;
+    dlg->cx = 200;
+    dlg->cy = 50;
+
+    BYTE* p = buf + sizeof(DLGTEMPLATE);
+    *reinterpret_cast<WORD*>(p) = 0; p += 2; // menu
+    *reinterpret_cast<WORD*>(p) = 0; p += 2; // class
+    const wchar_t* title = L"Find";
+    size_t titleLen = (wcslen(title) + 1) * sizeof(wchar_t);
+    memcpy(p, title, titleLen); p += titleLen;
+
+    p = reinterpret_cast<BYTE*>((reinterpret_cast<ULONG_PTR>(p) + 3) & ~3);
+
+    // Static label
+    auto* ctrl = reinterpret_cast<DLGITEMTEMPLATE*>(p);
+    ctrl->style = WS_CHILD | WS_VISIBLE | SS_LEFT;
+    ctrl->x = 7; ctrl->y = 7; ctrl->cx = 30; ctrl->cy = 10;
+    ctrl->id = 0xFFFF;
+    p += sizeof(DLGITEMTEMPLATE);
+    *reinterpret_cast<WORD*>(p) = 0xFFFF; p += 2;
+    *reinterpret_cast<WORD*>(p) = 0x0082; p += 2;
+    const wchar_t* label = L"Find:";
+    size_t labelLen = (wcslen(label) + 1) * sizeof(wchar_t);
+    memcpy(p, label, labelLen); p += labelLen;
+    *reinterpret_cast<WORD*>(p) = 0; p += 2;
+
+    p = reinterpret_cast<BYTE*>((reinterpret_cast<ULONG_PTR>(p) + 3) & ~3);
+
+    // Edit box
+    ctrl = reinterpret_cast<DLGITEMTEMPLATE*>(p);
+    ctrl->style = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL;
+    ctrl->x = 40; ctrl->y = 5; ctrl->cx = 100; ctrl->cy = 14;
+    ctrl->id = IDC_FIND_EDIT;
+    p += sizeof(DLGITEMTEMPLATE);
+    *reinterpret_cast<WORD*>(p) = 0xFFFF; p += 2;
+    *reinterpret_cast<WORD*>(p) = 0x0081; p += 2;
+    *reinterpret_cast<WORD*>(p) = 0; p += 2;
+    *reinterpret_cast<WORD*>(p) = 0; p += 2;
+
+    p = reinterpret_cast<BYTE*>((reinterpret_cast<ULONG_PTR>(p) + 3) & ~3);
+
+    // Find Next button (default)
+    ctrl = reinterpret_cast<DLGITEMTEMPLATE*>(p);
+    ctrl->style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON;
+    ctrl->x = 150; ctrl->y = 5; ctrl->cx = 42; ctrl->cy = 14;
+    ctrl->id = IDOK;
+    p += sizeof(DLGITEMTEMPLATE);
+    *reinterpret_cast<WORD*>(p) = 0xFFFF; p += 2;
+    *reinterpret_cast<WORD*>(p) = 0x0080; p += 2;
+    const wchar_t* okText = L"Find Next";
+    size_t okLen = (wcslen(okText) + 1) * sizeof(wchar_t);
+    memcpy(p, okText, okLen); p += okLen;
+    *reinterpret_cast<WORD*>(p) = 0; p += 2;
+
+    if (DialogBoxIndirectW(GetModuleHandleW(nullptr), dlg, hParent, FindDlgProc) == 1) {
+        FindNext(g_hRichEdit);
+    }
+}
+
 // ── Go To Line dialog ───────────────────────────────────────────────────────
 static constexpr int IDC_GOTO_EDIT = 200;
 
@@ -564,6 +689,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdSh
         if (msg.message == WM_KEYDOWN && msg.wParam == VK_SPACE) {
             g_paused = !g_paused;
             UpdateStatusBar(g_lastLineCount, g_lastSize);
+            continue;
+        }
+        // Ctrl+F: Find
+        if (msg.message == WM_KEYDOWN && msg.wParam == 'F' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            ShowFindDialog(hWnd);
+            continue;
+        }
+        // F3: Find Next
+        if (msg.message == WM_KEYDOWN && msg.wParam == VK_F3) {
+            FindNext(g_hRichEdit);
             continue;
         }
         // Ctrl+G: Go To Line

@@ -34,6 +34,7 @@ Double-click `ColorTail.exe` or run it with no arguments to open a file picker.
 | Key | Action |
 |-----|--------|
 | `Space` | Pause/resume file monitoring |
+| `Ctrl+G` | Go to a specific line number |
 
 ## Build
 

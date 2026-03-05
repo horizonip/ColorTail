@@ -31,8 +31,9 @@ The installer references `../build/ColorTail.exe`, so build the project first.
 ColorTail.exe <filepath> [lines]
 ```
 
-- `filepath` — file to monitor (required)
+- `filepath` — file to monitor (opens a file picker if omitted)
 - `lines` — number of tail lines to display (default: 50)
+- `/?`, `--help`, `-h` — show usage info with version number
 
 ## Architecture
 
@@ -45,3 +46,11 @@ Single-file Win32 GUI application (`ColorTail.cpp`) — no framework, no depende
 **Incremental updates:** `UpdateContent()` computes overlap between old and new line sets. When lines are appended, only new lines are added to the RichEdit (with top lines trimmed to maintain the window size). When no overlap is found (truncation/replacement), the entire control is redrawn.
 
 **Color cycling:** 8-color palette. Color index advances each time new lines are appended, making it easy to visually distinguish successive batches of output.
+
+**Keyboard shortcuts:** Intercepted in the message loop before `TranslateMessage`/`DispatchMessageW`. Space (pause), Ctrl+O (open), Ctrl+W (close/reopen), Ctrl+F (find), F3 (find next), Ctrl+G (go to line), Ctrl+Home/End (top/bottom), Escape (exit). Ctrl+C (copy) and Ctrl+A (select all) are handled natively by the RichEdit control.
+
+**Dialogs:** Find and Go To Line dialogs are built with in-memory `DLGTEMPLATE` structs (no .rc resource files). Dialog procs are `FindDlgProc` and `GoToLineDlgProc`.
+
+**Context menu:** Right-click popup menu (`WM_CONTEXTMENU` / `WM_COMMAND`) mirrors all keyboard shortcuts. Menu item IDs are `IDM_*` constants.
+
+**Version:** `APP_VERSION` constant displayed in the title bar and help dialog. Also referenced in `installer/Package.wxs`.

@@ -70,6 +70,7 @@ static int           g_lastLineCount = 0;
 // Forward declarations
 static void UpdateContent();
 static void ScrollToBottom(HWND hRich);
+static void AppendColored(HWND hRich, const std::wstring& text, COLORREF color);
 
 // ── Open file ───────────────────────────────────────────────────────────────
 static void OpenNewFile()
@@ -102,7 +103,10 @@ static void OpenNewFile()
 }
 
 // ── Find dialog ─────────────────────────────────────────────────────────────
-static constexpr int IDC_FIND_EDIT = 201;
+static constexpr int IDC_FIND_EDIT   = 201;
+static constexpr int IDC_FIND_ALL    = 202;
+static constexpr int FIND_RESULT_NEXT = 1;
+static constexpr int FIND_RESULT_ALL  = 2;
 static std::wstring  g_findText;
 
 static INT_PTR CALLBACK FindDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM)
@@ -118,7 +122,14 @@ static INT_PTR CALLBACK FindDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM)
             wchar_t buf[256] = {};
             GetDlgItemTextW(hDlg, IDC_FIND_EDIT, buf, _countof(buf));
             g_findText = buf;
-            EndDialog(hDlg, 1);
+            EndDialog(hDlg, FIND_RESULT_NEXT);
+            return TRUE;
+        }
+        if (LOWORD(wParam) == IDC_FIND_ALL) {
+            wchar_t buf[256] = {};
+            GetDlgItemTextW(hDlg, IDC_FIND_EDIT, buf, _countof(buf));
+            g_findText = buf;
+            EndDialog(hDlg, FIND_RESULT_ALL);
             return TRUE;
         }
         if (LOWORD(wParam) == IDCANCEL) {
@@ -162,13 +173,121 @@ static void FindNext(HWND hRich)
     }
 }
 
+// Read all lines from the file (not limited to tail).
+static std::vector<std::wstring> ReadAllLines(const std::wstring& path)
+{
+    std::vector<std::wstring> result;
+    HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) return result;
+
+    LARGE_INTEGER fileSize;
+    GetFileSizeEx(hFile, &fileSize);
+    DWORD sizeToRead = (fileSize.QuadPart > 64 * 1024 * 1024)
+                        ? 64 * 1024 * 1024
+                        : static_cast<DWORD>(fileSize.QuadPart);
+    if (sizeToRead == 0) { CloseHandle(hFile); return result; }
+
+    std::vector<char> buf(sizeToRead + 1);
+    DWORD bytesRead = 0;
+    ReadFile(hFile, buf.data(), sizeToRead, &bytesRead, nullptr);
+    CloseHandle(hFile);
+    buf[bytesRead] = '\0';
+
+    int wideLen = MultiByteToWideChar(CP_UTF8, 0, buf.data(), bytesRead, nullptr, 0);
+    if (wideLen == 0)
+        wideLen = MultiByteToWideChar(CP_ACP, 0, buf.data(), bytesRead, nullptr, 0);
+    if (wideLen == 0) return result;
+
+    std::wstring wide(wideLen, L'\0');
+    if (MultiByteToWideChar(CP_UTF8, 0, buf.data(), bytesRead, wide.data(), wideLen) == 0)
+        MultiByteToWideChar(CP_ACP, 0, buf.data(), bytesRead, wide.data(), wideLen);
+
+    std::wistringstream iss(wide);
+    std::wstring line;
+    while (std::getline(iss, line)) {
+        if (!line.empty() && line.back() == L'\r')
+            line.pop_back();
+        result.push_back(std::move(line));
+    }
+    return result;
+}
+
+static void FindAllInFile()
+{
+    if (g_findText.empty() || g_filePath.empty()) return;
+
+    std::vector<std::wstring> allLines = ReadAllLines(g_filePath);
+    if (allLines.empty()) return;
+
+    // Find matching line indices (case-insensitive)
+    std::wstring searchLower = g_findText;
+    std::transform(searchLower.begin(), searchLower.end(), searchLower.begin(), ::towlower);
+
+    std::vector<int> matchIndices;
+    for (int i = 0; i < static_cast<int>(allLines.size()); ++i) {
+        std::wstring lineLower = allLines[i];
+        std::transform(lineLower.begin(), lineLower.end(), lineLower.begin(), ::towlower);
+        if (lineLower.find(searchLower) != std::wstring::npos)
+            matchIndices.push_back(i);
+    }
+
+    if (matchIndices.empty()) {
+        MessageBoxW(g_hMainWnd, L"Text not found.", L"Find All", MB_ICONINFORMATION);
+        return;
+    }
+
+    // Pause monitoring while showing results
+    g_paused = true;
+
+    // Clear the RichEdit and display results
+    SendMessageW(g_hRichEdit, WM_SETREDRAW, FALSE, 0);
+    SetWindowTextW(g_hRichEdit, L"");
+
+    int colorIdx = 0;
+    int totalLines = static_cast<int>(allLines.size());
+    int context = 3;
+
+    for (size_t m = 0; m < matchIndices.size(); ++m) {
+        int matchLine = matchIndices[m];
+        int startLine = std::max(0, matchLine - context);
+        int endLine = std::min(totalLines - 1, matchLine + context);
+
+        COLORREF color = g_colors[colorIdx % COLOR_COUNT];
+        colorIdx++;
+
+        // Separator between match groups
+        if (m > 0)
+            AppendColored(g_hRichEdit, L"\r\n--- match " + std::to_wstring(m + 1) + L" ---", color);
+
+        for (int i = startLine; i <= endLine; ++i) {
+            std::wstring prefix = std::to_wstring(i + 1) + L": ";
+            std::wstring text = (GetWindowTextLengthW(g_hRichEdit) > 0 ? L"\r\n" : L"") + prefix + allLines[i];
+            AppendColored(g_hRichEdit, text, color);
+        }
+    }
+
+    SendMessageW(g_hRichEdit, WM_SETREDRAW, TRUE, 0);
+    InvalidateRect(g_hRichEdit, nullptr, TRUE);
+
+    // Scroll to top to show first result
+    SendMessageW(g_hRichEdit, EM_SETSEL, 0, 0);
+    SendMessageW(g_hRichEdit, EM_SCROLLCARET, 0, 0);
+
+    // Update status bar
+    wchar_t status[256];
+    swprintf_s(status, L"FIND ALL | %d matches found for \"%s\" | Press Ctrl+W to return",
+               static_cast<int>(matchIndices.size()), g_findText.c_str());
+    SetWindowTextW(g_hStatusBar, status);
+}
+
 static void ShowFindDialog(HWND hParent)
 {
-    alignas(4) BYTE buf[512] = {};
+    alignas(4) BYTE buf[1024] = {};
     auto* dlg = reinterpret_cast<DLGTEMPLATE*>(buf);
     dlg->style = DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU;
-    dlg->cdit = 3;
-    dlg->cx = 200;
+    dlg->cdit = 4; // label, edit, Find Next, Find All
+    dlg->cx = 250;
     dlg->cy = 50;
 
     BYTE* p = buf + sizeof(DLGTEMPLATE);
@@ -221,8 +340,26 @@ static void ShowFindDialog(HWND hParent)
     memcpy(p, okText, okLen); p += okLen;
     *reinterpret_cast<WORD*>(p) = 0; p += 2;
 
-    if (DialogBoxIndirectW(GetModuleHandleW(nullptr), dlg, hParent, FindDlgProc) == 1) {
+    p = reinterpret_cast<BYTE*>((reinterpret_cast<ULONG_PTR>(p) + 3) & ~3);
+
+    // Find All button
+    ctrl = reinterpret_cast<DLGITEMTEMPLATE*>(p);
+    ctrl->style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON;
+    ctrl->x = 197; ctrl->y = 5; ctrl->cx = 42; ctrl->cy = 14;
+    ctrl->id = IDC_FIND_ALL;
+    p += sizeof(DLGITEMTEMPLATE);
+    *reinterpret_cast<WORD*>(p) = 0xFFFF; p += 2;
+    *reinterpret_cast<WORD*>(p) = 0x0080; p += 2;
+    const wchar_t* allText = L"Find All";
+    size_t allLen = (wcslen(allText) + 1) * sizeof(wchar_t);
+    memcpy(p, allText, allLen); p += allLen;
+    *reinterpret_cast<WORD*>(p) = 0; p += 2;
+
+    INT_PTR result = DialogBoxIndirectW(GetModuleHandleW(nullptr), dlg, hParent, FindDlgProc);
+    if (result == FIND_RESULT_NEXT) {
         FindNext(g_hRichEdit);
+    } else if (result == FIND_RESULT_ALL) {
+        FindAllInFile();
     }
 }
 
